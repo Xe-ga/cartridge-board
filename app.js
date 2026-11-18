@@ -738,8 +738,10 @@ function detailLoop(){
 }
 function drawDetail(){
   const c = detailC, box = $('#dtCenter').getBoundingClientRect();
-  const size = Math.max(200, Math.min(box.width * 1.35, box.height * 1.25) * DT.zoom);
-  const t = tplOf(c), unit = Math.hypot(t.bb.W, t.bb.H, t.T) * 1.04 * t.k;
+  const t = tplOf(c), D = Math.hypot(t.bb.W, t.bb.H, t.T) * 1.04, unit = D * t.k;
+  // сам картридж (а не холст под вращение) занимает ~70% свободного места — на любом экране
+  const fitPx = Math.min(box.width - 20, box.height - 110) * .64;
+  const size = Math.max(200, fitPx * D / Math.max(t.bb.W, t.bb.H) * DT.zoom);
   const cv = $('#dtCanvas');
   cv.style.width = cv.style.height = size + 'px';
   $('#dtStage').style.setProperty('--sz', size + 'px');
