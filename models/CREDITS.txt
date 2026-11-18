@@ -1,0 +1,18 @@
+3D-модели картриджей (Sketchfab, лицензия CC BY 4.0 — https://creativecommons.org/licenses/by/4.0/)
+Изменения: удалены текстуры и логотипы, модели отмасштабированы до реальных размеров,
+повёрнуты, материалы заменены на перекрашиваемые; этикетка рисуется приложением.
+
+gb.glb    — "Gameboy Cartridge lowpoly" by MeBob
+            https://sketchfab.com/3d-models/8b9728eab16c4056ac2636ae7f0f038f
+gba.glb   — "Pokemon Cartridge (Gameboy)" by thegraphicsgeek
+            https://sketchfab.com/3d-models/7d79300f91a441d0ba520fdbd268aa5f
+ds.glb    — "Nintendo DS Cartridge" by Pcwer
+            https://sketchfab.com/3d-models/364e487e31fd4135b6c6941a0ffaba82
+n3ds.glb  — "3DS Cartridge" by SGLilac
+            https://sketchfab.com/3d-models/e075af04a56f4d31bbd7d92365f1d8fc
+sw.glb    — "Nintendo Switch game Cartridge v1" by maxns1980
+            https://sketchfab.com/3d-models/27b7100f72c94f05a92b2efe862846c0
+umd.glb   — "PSP UMD" by cutlassdigital
+            https://sketchfab.com/3d-models/c7948faaa2f14d65a0c701cebbf93729
+
+PS Vita и «Домашняя» — процедурные модели самого приложения.
