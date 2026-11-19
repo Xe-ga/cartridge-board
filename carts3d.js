@@ -136,8 +136,18 @@ function pcb(){
   return pcbTex;
 }
 
+/* ---------- логотипы консолей ---------- */
+const LOGO = {};
+const loadLogo = k => new Promise(res => { const im = new Image(); im.onload = () => { LOGO[k] = im; res(); }; im.onerror = () => res(); im.src = `models/logos/${k}.png`; });
+// полоска с логотипом сверху этикетки (по желанию): h — доля высоты этикетки
+const BRAND = { ds: { img: 'ds', bg: '#fbfbfb', h: .17, line: '#c9cdd2' }, n3ds: { img: 'n3ds', bg: '#fbfbfb', h: .17, line: '#c9cdd2' }, sw: { img: 'sw', bg: '#e60012', h: .19 } };
+export const brandName = p => ({ ds: 'Nintendo DS', n3ds: 'Nintendo 3DS', sw: 'Nintendo Switch' })[p] || '';
+// рельефная надпись на корпусе над этикеткой: прямоугольник [cx, cy, w, h] в мм
+const EMBOSS = { gb: [-1, 22.5, 40, 7], gba: [0, 11, 27.4, 3.2] };
+
 // Готовые модели: models/manifest.json + *.glb (мм, лицом к +Z, верх +Y, центр в 0)
 export async function loadModels(){
+  await Promise.all(['ds', 'n3ds', 'sw', 'gba-plate', 'gba-letters'].map(loadLogo));
   try {
     const mf = await (await fetch('models/manifest.json', { cache: 'no-store' })).json();
     const loader = new GLTFLoader();
@@ -162,6 +172,13 @@ export async function loadModels(){
       t.label = [lx0, ly0, lx1, ly1, 1];
       t.glb = { parts, labelGeo: lg };
       t.disc = null;
+      const e = EMBOSS[plat];
+      if (e){
+        // высота лицевой поверхности под надписью — лучом сверху
+        const meshes = parts.map(p => new THREE.Mesh(p.geo));
+        const hit = new THREE.Raycaster(new THREE.Vector3(e[0], e[1], 100), new THREE.Vector3(0, 0, -1)).intersectObjects(meshes)[0];
+        t.emb = { geo: new THREE.PlaneGeometry(e[2], e[3]).translate(e[0], e[1], (hit ? hit.point.z : m.labelZ) + .03), w: e[2], h: e[3] };
+      }
     }));
     return true;
   } catch (e){ console.warn('модели не загружены:', e); return false; }
@@ -266,7 +283,24 @@ function drawLabel(c, t, round){
   const lw = round ? 1 : t.label[2] - t.label[0], lh = round ? 1 : t.label[3] - t.label[1];
   const S = 512, W = Math.round(lw >= lh ? S : S * lw / lh), H = Math.round(lh >= lw ? S : S * lh / lw);
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
-  const x = cv.getContext('2d'), lc = c.labelColor || '#2f7de0';
+  const x = cv.getContext('2d');
+  const br = !round && c.fx && c.fx.brand && BRAND[c.platform], logo = br && LOGO[br.img];
+  if (logo){
+    // сверху — полоска с логотипом консоли, ниже — сама этикетка
+    const sh = Math.round(H * br.h), face = document.createElement('canvas');
+    face.width = W; face.height = H - sh;
+    drawFace(c, t, false, face.getContext('2d'), W, H - sh, true);
+    x.drawImage(face, 0, sh);
+    x.fillStyle = br.bg; x.fillRect(0, 0, W, sh);
+    if (br.line){ x.fillStyle = br.line; x.fillRect(0, sh - 2, W, 2); }
+    const k = Math.min(W * .84 / logo.width, sh * .58 / logo.height), lw2 = logo.width * k, lh2 = logo.height * k;
+    x.drawImage(logo, (W - lw2) / 2, (sh - lh2) / 2 + sh * .03, lw2, lh2);
+  } else drawFace(c, t, round, x, W, H, false);
+  edgeShade(x, W, H, round);
+  return cv;
+}
+function drawFace(c, t, round, x, W, H, branded){
+  const lc = c.labelColor || '#2f7de0';
   const img = c.image ? getImg(c.image, c.id) : null;
   if (img){
     const k = Math.max(W / img.width, H / img.height);
@@ -279,8 +313,7 @@ function drawLabel(c, t, round){
       x.fillStyle = '#fff'; x.textAlign = 'center'; x.textBaseline = 'top';
       lines.forEach((l, i) => x.fillText(l, W / 2, by + 5 + i * size * 1.3));
     }
-    edgeShade(x, W, H, round);
-    return cv;
+    return;
   }
   const g = round ? x.createRadialGradient(W * .4, H * .35, 10, W / 2, H / 2, W * .6) : x.createLinearGradient(0, 0, W * .6, H);
   g.addColorStop(0, mix(lc, [255, 255, 255], .22)); g.addColorStop(.5, lc); g.addColorStop(1, mix(lc, [0, 0, 0], .4));
@@ -291,20 +324,66 @@ function drawLabel(c, t, round){
   const dark = lum(lc) > .66, col = dark ? '#2a1a0e' : '#fff';
   x.fillStyle = col; x.textAlign = 'center'; x.textBaseline = 'top';
   x.font = `800 ${Math.round(Math.min(W, H) * .07)}px "Segoe UI", sans-serif`;
-  x.globalAlpha = .75;
-  if (x.letterSpacing !== undefined) x.letterSpacing = '4px';
-  x.fillText(t.name.toUpperCase(), W / 2, round ? H * .8 : H * .05);
-  if (x.letterSpacing !== undefined) x.letterSpacing = '0px';
-  x.globalAlpha = 1;
+  if (!branded && !t.emb){   // есть логотип консоли или надпись на корпусе — мелкая подпись не нужна
+    x.globalAlpha = .75;
+    if (x.letterSpacing !== undefined) x.letterSpacing = '4px';
+    x.fillText(t.name.toUpperCase(), W / 2, round ? H * .8 : H * .05);
+    if (x.letterSpacing !== undefined) x.letterSpacing = '0px';
+    x.globalAlpha = 1;
+  }
   const title = c.title || 'Без названия';
-  const box = round ? { w: W * .56, h: H * .26, y: H * .14 } : { w: W * .86, h: H * .74, y: H * .17 };
+  const box = round ? { w: W * .56, h: H * .26, y: H * .14 } : branded ? { w: W * .86, h: H * .84, y: H * .08 } : { w: W * .86, h: H * .74, y: H * .17 };
   const { size, lines } = fitText(x, title, box.w, box.h, Math.round(Math.min(W, H) * .2));
   x.shadowColor = dark ? 'rgba(255,255,255,.35)' : 'rgba(0,0,0,.45)'; x.shadowBlur = 4; x.shadowOffsetY = 2;
   const total = lines.length * size * 1.08, y0 = box.y + (box.h - total) / 2;
   lines.forEach((l, i) => x.fillText(l, W / 2, y0 + i * size * 1.08));
   x.shadowColor = 'transparent';
-  edgeShade(x, W, H, round);
-  return cv;
+}
+
+/* ---------- рельефная надпись на корпусе (GB, GBA) ---------- */
+const embCache = new Map();
+function tinted(mask, color, W, H){
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const x = c.getContext('2d'); x.drawImage(mask, 0, 0, W, H);
+  x.globalCompositeOperation = 'source-in'; x.fillStyle = color; x.fillRect(0, 0, W, H);
+  return c;
+}
+// выпуклая (raised) или вдавленная форма: свет сверху-слева
+function relief(x, mask, W, H, d, body, hi, lo, raised = true){
+  x.drawImage(tinted(mask, raised ? hi : lo, W, H), -d, -d);
+  x.drawImage(tinted(mask, raised ? lo : hi, W, H), d, d);
+  x.drawImage(tinted(mask, body, W, H), 0, 0);
+}
+function gbMask(W, H){
+  // «Nintendo» в овальной рамке + «GAME BOY™» курсивом
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const x = c.getContext('2d'); x.fillStyle = x.strokeStyle = '#fff'; x.textBaseline = 'middle';
+  const pw = W * .3, ph = H * .62, py = (H - ph) / 2, lw = H * .07;
+  x.lineWidth = lw; x.beginPath(); x.roundRect(lw, py, pw, ph, ph / 2); x.stroke();
+  x.font = `700 ${Math.round(ph * .62)}px "Segoe UI", system-ui, sans-serif`; x.textAlign = 'center';
+  x.fillText('Nintendo', lw + pw / 2, H / 2 + ph * .02, pw * .84);
+  x.font = `italic 900 ${Math.round(H * .78)}px "Arial Black", "Segoe UI", sans-serif`; x.textAlign = 'left';
+  const gx = lw + pw + W * .035;
+  x.fillText('GAME BOY', gx, H / 2 + H * .04, W - gx - W * .05);
+  x.font = `700 ${Math.round(H * .2)}px "Segoe UI", sans-serif`; x.fillText('TM', W - W * .045, H * .2);
+  return c;
+}
+function embossTex(plat, shell){
+  const key = plat + shell;
+  if (embCache.has(key)) return embCache.get(key);
+  const e = TPL[plat].emb, W = 1024, H = Math.round(W * e.h / e.w);
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const x = cv.getContext('2d'), d = Math.max(2, H * .022);
+  const hi = mix(shell, [255, 255, 255], .4), lo = mix(shell, [0, 0, 0], .5);
+  if (plat === 'gba'){
+    if (!LOGO['gba-plate']) return null;
+    relief(x, LOGO['gba-plate'], W, H, d, mix(shell, [255, 255, 255], .05), hi, lo, true);
+    relief(x, LOGO['gba-letters'], W, H, d * .8, mix(shell, [0, 0, 0], .12), hi, lo, false);
+  } else relief(x, gbMask(W, H), W, H, d * 1.3, mix(shell, [255, 255, 255], .04), hi, lo, true);
+  const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+  if (embCache.size > 40){ for (const t of embCache.values()) t && t.dispose(); embCache.clear(); }
+  embCache.set(key, tex);
+  return tex;
 }
 
 
@@ -331,6 +410,24 @@ void main(){
   } else if (uMode == 5){     // золотая фольга: тёплый бегущий блик
     float d = (vUv.x * 0.7 + vUv.y) * 0.6 - (0.55 + sh.x * 0.45 - sh.y * 0.35);
     col = vec3(1.0, 0.78, 0.38) * (exp(-d * d * 60.0) * 0.3 + 0.06);
+  } else if (uMode == 6){     // серебряный вихрь: гравированные кольца, блик-«бабочка» вращается при наклоне
+    vec2 p = vUv - 0.5 - sh * 0.06;
+    float r = length(p), a = atan(p.y, p.x);
+    float rings = 0.5 + 0.5 * sin(r * 120.0 + a * 1.0 - sh.x * 4.0);
+    float glint = pow(max(0.0, cos(a * 2.0 - (sh.x - sh.y) * 2.6)), 5.0);
+    col = vec3(0.93, 0.96, 1.0) * (0.035 + rings * (0.035 + 0.22 * glint));
+  } else if (uMode == 7){     // призма: пастельные осколки, у каждого свой цвет и вспышка
+    vec2 q = vec2(vUv.x + vUv.y, vUv.x - vUv.y) * 8.0;
+    vec2 cell = floor(q), f = fract(q) - 0.5;
+    float tri = step(f.x, f.y), rnd = hash(cell + tri * 17.0);
+    float h = fract(rnd * 0.5 + sh.x * 0.8 + sh.y * 0.6 + (vUv.x + vUv.y) * 0.35);
+    float flash = pow(0.5 + 0.5 * sin(rnd * 31.0 + sh.x * 9.0 - sh.y * 7.0), 3.0);
+    float edge = smoothstep(0.46, 0.5, max(abs(f.x), abs(f.y))) + smoothstep(0.035, 0.0, abs(f.x - f.y));
+    col = hsv(h, 0.38, 1.0) * (0.05 + 0.13 * flash) + vec3(edge * 0.06);
+  } else if (uMode == 8){     // радужная фольга: плавная радуга по диагонали, плывёт при наклоне
+    float h = fract((vUv.y * 0.8 - vUv.x * 0.45) * 0.9 + sh.x * 0.6 + sh.y * 0.5);
+    float band = 0.5 + 0.5 * sin((vUv.x - vUv.y) * 6.0 + sh.x * 5.0);
+    col = hsv(h, 0.75, 1.0) * (0.13 + 0.1 * band);
   } else if (uMode == 2){     // перламутр
     float h = fract(0.55 + (vUv.y - vUv.x) * 0.35 + sh.x * 0.45 + sh.y * 0.35);
     float wave = 0.5 + 0.5 * sin((vUv.x + vUv.y * 1.3) * 9.0 + sh.x * 4.0);
@@ -351,7 +448,7 @@ function disposeModel(m){
 }
 function modelFor(c){
   const t = tplOf(c), key = TPL[c.platform] ? c.platform : 'gb';
-  const sig = [key, c.shell, c.labelColor, c.title, c.image ? c.image.length + c.image.slice(-40) : '', c.showTitle, c.image ? !!getImg(c.image, c.id) : 0, (c.fx && c.fx.label) || '', (c.fx && c.fx.plastic) || ''].join('|');
+  const sig = [key, c.shell, c.labelColor, c.title, c.image ? c.image.length + c.image.slice(-40) : '', c.showTitle, c.image ? !!getImg(c.image, c.id) : 0, (c.fx && c.fx.label) || '', (c.fx && c.fx.plastic) || '', c.fx && c.fx.brand && BRAND[c.platform] ? 1 : 0].join('|');
   let m = models.get(c.id);
   if (m && m.key === sig) return m;
   if (m){ disposeModel(m); if (m.src && m.src !== c.image) queueMicrotask(pruneImages); }
@@ -383,6 +480,12 @@ function modelFor(c){
       cb_glass: mk({ color: 0xc4d2e0, transparent: true, opacity: .14, roughness: .03, clearcoat: 1, depthWrite: false }),
     };
     t.glb.parts.forEach(p => grp.add(new THREE.Mesh(p.geo, extra[p.mat] || shell)));
+    const et = t.emb && embossTex(key, c.shell || '#999999');
+    if (et){
+      // надпись консоли на корпусе — тот же пластик, рисунок рельефа в текстуре
+      const em = new THREE.Mesh(t.emb.geo, mk({ ...(PL[plastic] || PL.matte), bumpMap: null, roughnessMap: null, metalnessMap: null, color: 0xffffff, map: et, transparent: true, depthWrite: false, opacity: plastic === 'clear' ? .7 : 1 }));
+      em.renderOrder = 4; grp.add(em);
+    }
   } else {
     grp.add(new THREE.Mesh(G.body, shell), new THREE.Mesh(G.rim, shell));
     G.extras.forEach(g => grp.add(new THREE.Mesh(g, ridge)));
@@ -396,10 +499,13 @@ function modelFor(c){
   if (lfx === 'gold') Object.assign(lblOpts, { color: new THREE.Color(0xfff0c8), metalness: .4, roughness: .3, clearcoat: .6, clearcoatRoughness: .1, emissive: new THREE.Color(0x3a2a08) });
   if (lfx === 'glitter') Object.assign(lblOpts, { roughness: .35, clearcoat: .8, clearcoatRoughness: .08 });
   if (lfx === 'holo') Object.assign(lblOpts, { roughness: .3, metalness: 0, clearcoat: .6, clearcoatRoughness: .15, iridescence: .55, iridescenceIOR: 1.5, iridescenceThicknessRange: [250, 900] });
+  if (lfx === 'swirl') Object.assign(lblOpts, { color: new THREE.Color(0xe4e9f2), metalness: .45, roughness: .26, clearcoat: .8, clearcoatRoughness: .1 });
+  if (lfx === 'prism') Object.assign(lblOpts, { roughness: .24, clearcoat: .9, clearcoatRoughness: .08, iridescence: .35, iridescenceIOR: 1.4, iridescenceThicknessRange: [200, 700] });
+  if (lfx === 'poly') Object.assign(lblOpts, { roughness: .24, clearcoat: .9, clearcoatRoughness: .08, iridescence: .6, iridescenceIOR: 1.45, iridescenceThicknessRange: [250, 950] });
   if (plastic === 'clear') Object.assign(lblOpts, { transparent: true, opacity: 1, depthWrite: true });
   const lblMat = mk(lblOpts);
   let overlay = null;
-  if (lfx !== 'none'){ overlay = new THREE.ShaderMaterial({ uniforms: { uMode: { value: { gloss: 1, pearl: 2, holo: 3, glitter: 4, gold: 5 }[lfx] || 1 } }, vertexShader: FX_VERT, fragmentShader: FX_FRAG, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }); mats.push(overlay); }
+  if (lfx !== 'none'){ overlay = new THREE.ShaderMaterial({ uniforms: { uMode: { value: { gloss: 1, pearl: 2, holo: 3, glitter: 4, gold: 5, swirl: 6, prism: 7, poly: 8 }[lfx] || 1 } }, vertexShader: FX_VERT, fragmentShader: FX_FRAG, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }); mats.push(overlay); }
   const LG = t.glb ? t.glb.labelGeo : G.label;
   if (LG){ const lm = new THREE.Mesh(LG, lblMat); lm.renderOrder = 5; grp.add(lm); if (overlay){ const om = new THREE.Mesh(LG, overlay).translateZ(.02); om.renderOrder = 6; grp.add(om); } }
   if (!t.glb && t.disc){

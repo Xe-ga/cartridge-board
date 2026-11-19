@@ -1,4 +1,4 @@
-import { TPL, tplOf, canvasBox, initGL, renderCart, forget, onNeedRedraw, loadModels } from './carts3d.js';
+import { TPL, tplOf, canvasBox, initGL, renderCart, forget, onNeedRedraw, loadModels, brandName } from './carts3d.js';
 import { SND, play, unlock } from './sound.js';
 
 const $ = s => document.querySelector(s);
@@ -121,11 +121,10 @@ function makeCart(c){
   el.style.width = t.w + 'px'; el.style.height = t.h + 'px';
   const b = canvasBox(c);
   el.innerHTML = `<div class="body">${gl
-      ? `${fx.effects.includes('aura') ? '<canvas class="aura-cv"></canvas>' : ''}<canvas class="cv" style="left:${b.left}px;top:${b.top}px;width:${b.width}px;height:${b.height}px"></canvas>`
+      ? `${fx.effects.includes('aura') ? auraHTML(fx.colors) : ''}<canvas class="cv" style="left:${b.left}px;top:${b.top}px;width:${b.width}px;height:${b.height}px"></canvas>`
       : `<div class="fallback" style="background:${c.shell}"><span style="background:${c.labelColor};padding:4px;border-radius:3px">${esc(c.title)}</span></div>`}
     ${fx.effects.includes('sparkle') ? sparksHTML(12, fx.colors) : ''}</div><div class="rot" title="Повернуть (Shift — шаг 15°)">↻</div>`;
   placeCart(el, c);
-  const ac = el.querySelector('.aura-cv'); if (ac) ac._colors = fx.colors;
   return el;
 }
 function placeCart(el, c){
@@ -457,7 +456,7 @@ function platIcons(){
 }
 function buildDialog(){
   $('#fPlat').innerHTML = platIcons();
-  $('#fPlat').onclick = e => { const b = e.target.closest('button'); if (!b) return; draft.platform = b.dataset.p; play('snap'); refreshDialog(); };
+  $('#fPlat').onclick = e => { const b = e.target.closest('button'); if (!b) return; draft.platform = b.dataset.p; play('snap'); fxControls($('#fFx'), draft, refreshDialog); refreshDialog(); };
   swatches($('#fShell'), SHELLS, 'shell');
   swatches($('#fLabel'), LABELS, 'labelColor');
   let tT;
@@ -604,49 +603,39 @@ function sparksHTML(n, colors = PALETTES.gold){
 }
 
 /* ---- контурная аура: светящийся ореол точно по силуэту картриджа, цвета палитры бегут по кругу ---- */
-const auraMasks = new WeakMap();
+// Маска ореола (размытый силуэт с вырезанной серединой) считается редко и в половинном разрешении,
+// а бегущие цвета — это вращающийся conic-gradient под CSS-маской: крутит видеокарта, процессор не занят.
+const auraHTML = colors => `<div class="aura-cv"><i style="background:conic-gradient(${[...colors, colors[0]].join(',')})"></i></div>`;
+const auraT = new WeakMap();
+const auraMaskCv = document.createElement('canvas');
 function updateAuraMask(src){
-  if (!src.width) return;
-  const cssW = parseFloat(src.style.width) || src.width, k = src.width / cssW;
+  let st = auraT.get(src); if (!st){ st = { t: 0, h: 0 }; auraT.set(src, st); }
+  clearTimeout(st.h);
+  const wait = 160 - (performance.now() - st.t);
+  if (wait > 0) st.h = setTimeout(() => buildAura(src, st), wait);   // при вращении — не чаще ~6 раз/с
+  else buildAura(src, st);
+}
+function buildAura(src, st){
+  st.t = performance.now();
+  const a = src.isConnected && src.parentElement.querySelector('.aura-cv');
+  if (!a || !src.width) return;
+  const cssW = parseFloat(src.style.width) || src.width, cssH = parseFloat(src.style.height) || src.height;
   const f = Math.min(2.6, Math.max(1, cssW / 170));        // в карточке игры картридж крупный — ореол шире
-  const pad = Math.round(20 * k * f), m = auraMasks.get(src) || document.createElement('canvas');
-  m.width = src.width + pad * 2; m.height = src.height + pad * 2; m.pad = pad; m.k = k;
+  const q = .5, padC = Math.round(20 * f);                 // 1 пиксель маски = 2 css-пикселя
+  const w = Math.ceil(cssW * q), h = Math.ceil(cssH * q), pad = Math.round(padC * q);
+  const m = auraMaskCv; m.width = w + pad * 2; m.height = h + pad * 2;
   const x = m.getContext('2d');
-  x.clearRect(0, 0, m.width, m.height);
   x.shadowColor = '#fff'; x.shadowOffsetX = 20000;
-  x.shadowBlur = 14 * k * f; x.drawImage(src, pad - 20000, pad); x.drawImage(src, pad - 20000, pad);
-  x.shadowBlur = 6 * k * f; x.drawImage(src, pad - 20000, pad); x.drawImage(src, pad - 20000, pad);
-  x.shadowBlur = 2 * k * f; x.drawImage(src, pad - 20000, pad); x.drawImage(src, pad - 20000, pad);
-  auraMasks.set(src, m);
-}
-function paintAura(a, src, colors, ang){
-  const m = auraMasks.get(src); if (!m) return;
-  if (a.width !== m.width || a.height !== m.height){ a.width = m.width; a.height = m.height; }
-  a.style.width = m.width / m.k + 'px'; a.style.height = m.height / m.k + 'px';
-  a.style.left = src.offsetLeft - m.pad / m.k + 'px'; a.style.top = src.offsetTop - m.pad / m.k + 'px';
-  const x = a.getContext('2d');
-  x.globalCompositeOperation = 'source-over'; x.clearRect(0, 0, a.width, a.height);
-  x.drawImage(m, 0, 0);
-  x.globalCompositeOperation = 'source-in';
-  const g = x.createConicGradient(ang, a.width / 2, a.height / 2);
-  colors.forEach((c, i) => g.addColorStop(i / colors.length, c));
-  g.addColorStop(1, colors[0]);
-  x.fillStyle = g; x.fillRect(0, 0, a.width, a.height);
-  // светится только контур: силуэт самого картриджа вырезаем
-  x.globalCompositeOperation = 'destination-out'; x.drawImage(src, m.pad, m.pad);
+  for (const b of [14, 6, 2]){ x.shadowBlur = b * f * q; x.drawImage(src, pad - 20000, pad, w, h); x.drawImage(src, pad - 20000, pad, w, h); }
+  x.shadowColor = 'transparent';
+  x.globalCompositeOperation = 'destination-out'; x.drawImage(src, pad, pad, w, h);   // светится только контур
   x.globalCompositeOperation = 'source-over';
+  const url = `url(${m.toDataURL()})`;
+  const W = cssW + padC * 2, H = cssH + padC * 2;
+  Object.assign(a.style, { left: src.offsetLeft - padC + 'px', top: src.offsetTop - padC + 'px', width: W + 'px', height: H + 'px',
+    maskImage: url, webkitMaskImage: url });
+  a.style.setProperty('--d', Math.ceil(Math.hypot(W, H)) + 'px');
 }
-let auraLast = 0;
-function auraLoop(ts){
-  requestAnimationFrame(auraLoop);
-  if (ts - auraLast < 33) return;                         // ~30 кадров/с достаточно
-  auraLast = ts;
-  document.querySelectorAll('canvas.aura-cv').forEach(a => {
-    const src = a.parentElement.querySelector('canvas.cv');
-    if (src && a._colors) paintAura(a, src, a._colors, ts / 1000 * .9);
-  });
-}
-requestAnimationFrame(auraLoop);
 
 function fxControls(box, obj, onChange){
   const fx = normFx(obj);
@@ -658,11 +647,13 @@ function fxControls(box, obj, onChange){
     <div class="lab">Эффекты картриджа <span class="hint">— можно несколько</span></div>${multi([['glow', '✨ Свечение'], ['sparkle', '⭐ Искорки'], ['aura', '🌈 Контурная аура'], ['float', '🎈 Парит']])}
     <div class="lab">Палитра эффектов</div><div class="pals">${pals}</div>
     <div class="pcs">${sw}${fx.colors.length < 7 ? '<button class="pcadd" title="Добавить цвет">＋</button>' : ''}${fx.colors.length > 1 ? '<button class="pcdel" title="Убрать последний цвет">－</button>' : ''}</div>
-    <div class="lab">Наклейка</div>${chips('label', [['none', 'Обычная'], ['gloss', 'Глянец'], ['pearl', 'Перламутр'], ['holo', 'Голограмма'], ['glitter', 'Блёстки'], ['gold', 'Золотая фольга']])}`;
+    <div class="lab">Наклейка</div>${chips('label', [['none', 'Обычная'], ['gloss', 'Глянец'], ['pearl', 'Перламутр'], ['holo', 'Голограмма'], ['glitter', 'Блёстки'], ['gold', 'Золотая фольга'], ['swirl', 'Серебряный вихрь'], ['prism', 'Призма'], ['poly', 'Радужная фольга']])}
+    ${brandName(obj.platform) ? `<div class="lab">Логотип консоли</div><div class="chips"><button data-brand="1" class="${fx.brand ? 'on' : ''}">🏷 Полоска «${brandName(obj.platform)}»</button></div>` : ''}`;
   box.onclick = e => {
     const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.e){ const i = fx.effects.indexOf(b.dataset.e); if (i < 0) fx.effects.push(b.dataset.e); else fx.effects.splice(i, 1); }
     else if (b.dataset.p) fx.colors = [...PALETTES[b.dataset.p]];
+    else if (b.dataset.brand) fx.brand = !fx.brand;
     else if (b.classList.contains('pcadd')) fx.colors.push(fx.colors[fx.colors.length - 1]);
     else if (b.classList.contains('pcdel')) fx.colors.pop();
     else if (b.dataset.v) fx[b.closest('.chips').dataset.k] = b.dataset.v;
@@ -721,7 +712,7 @@ function onDetailFx(silent){
   st.className = fxClass(fx).trim();
   setFxVars(st, fx);
   st.querySelectorAll('.sparks,.aura,.aura-cv').forEach(x => x.remove());
-  if (fx.effects.includes('aura')){ st.insertAdjacentHTML('afterbegin', '<canvas class="aura-cv" style="position:absolute;pointer-events:none"></canvas>'); st.querySelector('.aura-cv')._colors = fx.colors; }
+  if (fx.effects.includes('aura')) st.insertAdjacentHTML('afterbegin', auraHTML(fx.colors));
   if (fx.effects.includes('sparkle')) st.insertAdjacentHTML('beforeend', sparksHTML(22, fx.colors).replace('class="sparks"', 'class="sparks" style="inset:2%;--sc:2"').replace(/--s:([\d.]+)px/g, (m, v) => `--s:${(v * 1.9).toFixed(1)}px`));
   DT.dirty = true;
   if (silent !== true){ save(); const n = cartNode(c.id); if (n){ n.replaceWith(makeCart(c)); requestDraw(c.id); } }
