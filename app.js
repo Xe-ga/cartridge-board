@@ -123,7 +123,7 @@ function makeCart(c){
   el.innerHTML = `<div class="body">${gl
       ? `${fx.effects.includes('aura') ? auraHTML(fx.colors) : ''}<canvas class="cv" style="left:${b.left}px;top:${b.top}px;width:${b.width}px;height:${b.height}px"></canvas>`
       : `<div class="fallback" style="background:${c.shell}"><span style="background:${c.labelColor};padding:4px;border-radius:3px">${esc(c.title)}</span></div>`}
-    ${fx.effects.includes('sparkle') ? sparksHTML(12, fx.colors) : ''}</div><div class="rot" title="Повернуть (Shift — шаг 15°)">↻</div>`;
+    ${fx.effects.includes('sparkle') ? sparksHTML(12, fx.colors) : ''}</div>`;
   placeCart(el, c);
   return el;
 }
