@@ -603,39 +603,49 @@ function sparksHTML(n, colors = PALETTES.gold){
 }
 
 /* ---- контурная аура: светящийся ореол точно по силуэту картриджа, цвета палитры бегут по кругу ---- */
-// Маска ореола (размытый силуэт с вырезанной серединой) считается редко и в половинном разрешении,
-// а бегущие цвета — это вращающийся conic-gradient под CSS-маской: крутит видеокарта, процессор не занят.
-const auraHTML = colors => `<div class="aura-cv"><i style="background:conic-gradient(${[...colors, colors[0]].join(',')})"></i></div>`;
-const auraT = new WeakMap();
-const auraMaskCv = document.createElement('canvas');
+// Маска ореола (размытый силуэт с вырезанной серединой) строится сразу при каждой перерисовке картриджа,
+// но в низком разрешении (ореол всё равно размытый) — это дёшево и не отстаёт от вращения.
+// Цвета палитры бегут по кругу на маленьком холсте, без подгрузки картинок — ничего не мигает.
+const auraHTML = colors => `<canvas class="aura-cv" data-c="${colors.join(',')}"></canvas>`;
 function updateAuraMask(src){
-  let st = auraT.get(src); if (!st){ st = { t: 0, h: 0 }; auraT.set(src, st); }
-  clearTimeout(st.h);
-  const wait = 160 - (performance.now() - st.t);
-  if (wait > 0) st.h = setTimeout(() => buildAura(src, st), wait);   // при вращении — не чаще ~6 раз/с
-  else buildAura(src, st);
-}
-function buildAura(src, st){
-  st.t = performance.now();
   const a = src.isConnected && src.parentElement.querySelector('.aura-cv');
   if (!a || !src.width) return;
   const cssW = parseFloat(src.style.width) || src.width, cssH = parseFloat(src.style.height) || src.height;
   const f = Math.min(2.6, Math.max(1, cssW / 170));        // в карточке игры картридж крупный — ореол шире
-  const q = .5, padC = Math.round(20 * f);                 // 1 пиксель маски = 2 css-пикселя
-  const w = Math.ceil(cssW * q), h = Math.ceil(cssH * q), pad = Math.round(padC * q);
-  const m = auraMaskCv; m.width = w + pad * 2; m.height = h + pad * 2;
+  const q = Math.min(.5, 260 / Math.max(cssW, cssH)), padC = Math.round(20 * f);
+  const w = Math.ceil(cssW * q), h = Math.ceil(cssH * q), pad = Math.ceil(padC * q);
+  const m = a._mask || (a._mask = document.createElement('canvas'));
+  m.width = w + pad * 2; m.height = h + pad * 2;
   const x = m.getContext('2d');
   x.shadowColor = '#fff'; x.shadowOffsetX = 20000;
   for (const b of [14, 6, 2]){ x.shadowBlur = b * f * q; x.drawImage(src, pad - 20000, pad, w, h); x.drawImage(src, pad - 20000, pad, w, h); }
   x.shadowColor = 'transparent';
   x.globalCompositeOperation = 'destination-out'; x.drawImage(src, pad, pad, w, h);   // светится только контур
   x.globalCompositeOperation = 'source-over';
-  const url = `url(${m.toDataURL()})`;
-  const W = cssW + padC * 2, H = cssH + padC * 2;
-  Object.assign(a.style, { left: src.offsetLeft - padC + 'px', top: src.offsetTop - padC + 'px', width: W + 'px', height: H + 'px',
-    maskImage: url, webkitMaskImage: url });
-  a.style.setProperty('--d', Math.ceil(Math.hypot(W, H)) + 'px');
+  const pc = pad / q;
+  Object.assign(a.style, { left: src.offsetLeft - pc + 'px', top: src.offsetTop - pc + 'px', width: m.width / q + 'px', height: m.height / q + 'px' });
+  if (a.width !== m.width || a.height !== m.height){ a.width = m.width; a.height = m.height; }
+  paintAura(a, auraAng);
 }
+let auraAng = 0, auraLast = 0;
+function paintAura(a, ang){
+  const m = a._mask; if (!m) return;
+  const cols = a._cols || (a._cols = (a.dataset.c || '#fff').split(','));
+  const x = a.getContext('2d');
+  x.globalCompositeOperation = 'copy'; x.drawImage(m, 0, 0);
+  x.globalCompositeOperation = 'source-in';
+  const g = x.createConicGradient(ang, a.width / 2, a.height / 2);
+  cols.forEach((c, i) => g.addColorStop(i / cols.length, c)); g.addColorStop(1, cols[0]);
+  x.fillStyle = g; x.fillRect(0, 0, a.width, a.height);
+  x.globalCompositeOperation = 'source-over';
+}
+function auraLoop(ts){
+  requestAnimationFrame(auraLoop);
+  if (ts - auraLast < 33) return;                          // ~30 кадров/с, холсты маленькие
+  auraLast = ts; auraAng = ts / 1000 * .9;
+  document.querySelectorAll('canvas.aura-cv').forEach(a => paintAura(a, auraAng));
+}
+requestAnimationFrame(auraLoop);
 
 function fxControls(box, obj, onChange){
   const fx = normFx(obj);

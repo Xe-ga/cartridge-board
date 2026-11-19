@@ -162,11 +162,7 @@ body.minimal #grip:hover,body.minimal.showbar #grip{opacity:.8}
 /* ---------- эффекты картриджа ---------- */
 .cart.fx-glow canvas.cv,.fx-glow>#dtCanvas,.fx-glow>#preview{filter:drop-shadow(0 0 1.5px var(--fxc)) drop-shadow(0 0 3px var(--fxc)) drop-shadow(0 0 8px color-mix(in srgb,var(--fxc2),transparent 35%));animation:glow 3s ease-in-out infinite}
 @keyframes glow{50%{filter:drop-shadow(0 0 2px var(--fxc)) drop-shadow(0 0 4px var(--fxc2)) drop-shadow(0 0 12px color-mix(in srgb,var(--fxc),transparent 40%))}}
-.aura-cv{position:absolute;pointer-events:none;overflow:hidden;contain:strict;-webkit-mask-size:100% 100%;mask-size:100% 100%;
-  -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;animation:auraPulse 2.8s ease-in-out infinite}
-.aura-cv i{position:absolute;left:50%;top:50%;width:var(--d,300px);height:var(--d,300px);margin:calc(var(--d,300px) / -2) 0 0 calc(var(--d,300px) / -2);
-  will-change:transform;animation:auraRot 7s linear infinite}
-@keyframes auraRot{to{transform:rotate(360deg)}}
+.aura-cv{position:absolute;pointer-events:none;animation:auraPulse 2.8s ease-in-out infinite}
 @keyframes auraPulse{50%{opacity:.7}}
 .pals{display:flex;flex-wrap:wrap;gap:6px}
 .pal{width:36px;height:18px;border-radius:9px;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.2);cursor:pointer;padding:0}
